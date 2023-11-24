@@ -1,80 +1,66 @@
 import redis
-import sys
+import tkinter as tk
 import subprocess
-import paramiko
-import sys
 
-# 외부 Redis 서버 정보
-redis_host = "i9c102.p.ssafy.io"
-redis_port = 6379  # Redis 포트 번호
-redis_password = "3btic102"  # 사용자 인증이 설정된 경우
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
+
+def button_click(number):
+    current = otp_entry.get()
+    otp_entry.delete(0, tk.END)
+    otp_entry.insert(tk.END, current + str(number))
+
+def clear():
+    otp_entry.delete(0, tk.END)
+
+def confirm():
+    value = otp_entry.get()
+    email = None
+    redis_client.select(0)
+    email = redis_client.get(value)
+    if email != None:
+        redis_client.set(value, 'true')
+        print(email)
+        subprocess.run(["python", "/home/pi/sketchbook/wait.py", email])
+    else:
+        otp_entry.delete(0, tk.END)
+
+redis_host = os.getenv('REDIS_HOST')
+redis_port = os.getenv('REDIS_PORT')
+redis_password = os.getenv('REDIS_PASSWORD')
 
 # 외부 Redis 서버에 연결
-redis_client = redis.Redis(host=redis_host, port=redis_port, password=redis_password, db=1)
-email = sys.argv[1]
+redis_client = redis.Redis(host=redis_host, port=redis_port, password=redis_password, db=0)
+subprocess.Popen(["pkill", "-f", "onboard"])
 
-# EC2 인스턴스의 접속 정보
-ec2_ip = 'i9c102.p.ssafy.io'
-ec2_username = 'ubuntu'
-ec2_private_key = '/home/pi/sketchbook/I9C102T.pem'
+otp = tk.Tk()
+otp.title("OTP 입력")
+otp.geometry("720x480")
 
-# SSH 클라이언트 생성
-client = paramiko.SSHClient()
-client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-private_key = paramiko.RSAKey.from_private_key_file(ec2_private_key)
+otp_entry = tk.Entry(otp, font=("Helvetica", 30))
+otp_entry.grid(row=0, column=0, columnspan=3, padx=10, pady=10, sticky="nsew")
 
-while True:
-    value = redis_client.get(email)
-    value = value.decode('utf-8')
-    if (value != "ready"):
-        print(value)
-        if (value == "start"):
-            try:
-                # EC2 인스턴스에 연결
-                client.connect(ec2_ip, username=ec2_username, pkey=private_key)
+buttons = [("1", 1, 0), ("2", 1, 1), ("3", 1, 2),
+            ("4", 2, 0), ("5", 2, 1), ("6", 2, 2),
+            ("7", 3, 0), ("8", 3, 1), ("9", 3, 2),
+            ("0", 4, 1)]
+    
+for btn_text, row, col in buttons:
+    button = tk.Button(otp, text=btn_text, font=("Helvetica", 40), command=lambda text=btn_text: button_click(text))
+    button.grid(row=row, column=col, padx=10, pady=10, sticky="nsew")
+    otp.grid_columnconfigure(col, weight=1)  # 가운데 정렬을 위해 열의 크기 조정
+        
+otp.grid_rowconfigure(0, weight=1)  # 가운데 정렬을 위해 첫 번째 행의 크기 조정
+otp.grid_rowconfigure(4, weight=1)  # 가운데 정렬을 위해 다섯 번째 행의 크기 조정
 
-                # 원격에서 실행시킬 파이썬 파일 경로와 명령어
-                remote_python_file = '/home/ubuntu/user/server.py'
-                command = f'python3 {remote_python_file} {email}'
-                print(command)
+clear_button = tk.Button(otp, text="지우기", font=("Helvetica", 15), command=clear)
+clear_button.grid(row=4, column=0, padx=10, pady=10, sticky="nsew")
 
-                # 명령어 실행
-                stdin, stdout, stderr = client.exec_command(command)
-            except Exception as e:
-                print("An error occurred:", str(e))
-            finally:
-                # 연결 종료
-                client.close()
-                
-            subprocess.run(["python", "/home/pi/sketchbook/capture.py", email])
-            
-            try:
-                # EC2 인스턴스에 연결
-                client.connect(ec2_ip, username=ec2_username, pkey=private_key)
+confirm_button = tk.Button(otp, text="확인", font=("Helvetica", 15), command=confirm)
+confirm_button.grid(row=4, column=2, padx=10, pady=10, sticky="nsew")
 
-                # 원격에서 실행시킬 파이썬 파일 경로와 명령어
-                remote_python_file = '/home/ubuntu/user/tflite.py'
-                command = f'python3 {remote_python_file} {email}'
-                print(command)
+subprocess.Popen(["pkill", "-f", "wifi.py"])
 
-                # 명령어 실행
-                stdin, stdout, stderr = client.exec_command(command)
-            except Exception as e:
-                print("An error occurred:", str(e))
-            finally:
-                # 연결 종료
-                client.close()
-        elif (value == "record"):
-            subprocess.run(["python", "/home/pi/sketchbook/record.py", email])
-        elif (value == "story"):
-            subprocess.run(["python", "/home/pi/sketchbook/cam.py", email])
-        elif (value == "mission"):
-            subprocess.run(["python", "/home/pi/sketchbook/points.py", email])
-        elif (value == "stop"):
-            subprocess.run(["pkill", "-f", "wait.py"])
-            subprocess.Popen(["python", "/home/pi/sketchbook/wait.py", email])
-            break
-        elif (value == "logout"):
-            subprocess.run(["pkill", "-f", "wait.py"])
-            subprocess.Popen(["python", "/home/pi/sketchbook/otp.py"])
-            break
+otp.mainloop()
